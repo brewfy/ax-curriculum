@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import pygame; print\\('pygame OK:', pygame.version.ver\\)\")",
+      "Bash(py --version)",
+      "Bash(where python *)",
+      "Bash(python3 -c \"import sys; print\\(sys.version\\)\")",
+      "Bash(/c/Users/user/AppData/Local/Microsoft/WindowsApps/python.exe --version)",
+      "Bash(cmd.exe /c \"python --version\")",
+      "Bash(cmd.exe /c \"python --version && pip install pygame\")",
+      "Bash(cmd.exe /c \"python -c \\\\\"import sys; print\\(sys.version\\)\\\\\" 2>&1\")",
+      "Bash(python -m pytest tests/ -v)"
+    ]
+  }
+}

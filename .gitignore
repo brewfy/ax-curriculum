@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 가상환경
+venv/
+.venv/
+env/
+.env/
+
+# 환경변수 (API 키 등 민감 정보)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 벡터 DB (ChromaDB 로컬 저장소)
+04.RAG/chroma_db/
+**/chroma_db/
+
+# 로그
+*.log
+logs/
+
+# 임시 파일
+*.tmp
+*.bak
+*.swp
+*~
