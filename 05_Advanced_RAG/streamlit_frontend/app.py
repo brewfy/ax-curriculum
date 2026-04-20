@@ -31,6 +31,36 @@ def _fetch_config() -> dict:
         return {"has_env_key": False}
 
 
+def _check_backend_db() -> bool:
+    """백엔드의 현재 DB 준비 상태를 확인합니다 (논블로킹)."""
+    try:
+        r = requests.get(f"{_backend_url()}/health", timeout=5)
+        return r.json().get("db_ready", False)
+    except Exception:
+        return False
+
+
+def _frontend_api_key() -> str:
+    """Streamlit Cloud secrets 또는 환경변수에서 API 키를 읽습니다."""
+    try:
+        return st.secrets.get("OPENAI_API_KEY", "") or ""
+    except Exception:
+        return os.getenv("OPENAI_API_KEY", "")
+
+
+def _effective_api_key() -> str:
+    """사용 가능한 API 키를 우선순위에 따라 반환합니다.
+    1) 사용자가 세션에서 직접 입력한 키
+    2) Streamlit secrets / 환경변수 키
+    3) 빈 문자열 (백엔드 env key 사용)
+    """
+    return (
+        st.session_state.get("info", {}).get("api_key", "")
+        or _frontend_api_key()
+        or ""
+    )
+
+
 # ── SSE 스트리밍 헬퍼 ─────────────────────────────────────────
 def _stream(endpoint: str, payload: dict):
     url = f"{_backend_url()}{endpoint}"
@@ -132,8 +162,9 @@ st.markdown("""
 
 # ── 단계 초기화 ───────────────────────────────────────────────
 _cfg = _fetch_config()
-_HAS_ENV_KEY = _cfg.get("has_env_key", False)
-STEPS = [s for s in _ALL_STEPS if not (s == "api_key" and _HAS_ENV_KEY)]
+_HAS_ENV_KEY  = _cfg.get("has_env_key", False)  # 백엔드 env key 보유 여부
+_HAS_API_KEY  = _HAS_ENV_KEY or bool(_frontend_api_key())  # 어느 쪽이든 키 존재 여부
+STEPS = [s for s in _ALL_STEPS if not (s == "api_key" and _HAS_API_KEY)]
 
 
 # ── 질문 생성 ─────────────────────────────────────────────────
@@ -265,9 +296,12 @@ for _k, _v in {
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
-if _HAS_ENV_KEY and not st.session_state.db_ready:
-    with st.spinner("RAG DB 초기화 중..."):
-        _api_init("")
+if _HAS_API_KEY and not st.session_state.db_ready:
+    if _check_backend_db():
+        st.session_state.db_ready  = True
+        st.session_state.db_status = "RAG DB 준비 완료"
+    else:
+        st.session_state.db_status = "RAG DB 초기화 중... (백엔드 준비 대기)"
 
 if not st.session_state.messages:
     st.session_state.messages.append({
@@ -311,6 +345,10 @@ def run_app():
             st.markdown('<div style="color:#1a7a4a;font-size:0.78rem;padding:0.2rem 0 0.5rem;">✓ RAG 활성화</div>', unsafe_allow_html=True)
         elif st.session_state.db_status:
             st.markdown(f'<div style="color:#b45a00;font-size:0.78rem;padding:0.2rem 0 0.5rem;">⚠ {st.session_state.db_status}</div>', unsafe_allow_html=True)
+            if _HAS_API_KEY and _check_backend_db():
+                st.session_state.db_ready  = True
+                st.session_state.db_status = "RAG DB 준비 완료"
+                st.rerun()
 
         if cur_step == "type_counts":
             st.markdown('<div class="section-header">AX Compass 입력 중</div>', unsafe_allow_html=True)
@@ -388,7 +426,7 @@ else:
 
     # 커리큘럼 생성 단계
     if st.session_state.step == "generating":
-        api_key  = st.session_state.info.get("api_key", "")
+        api_key  = _effective_api_key()
         edu_dict = _make_edu_info_dict()
         active   = _active_types()
 
@@ -451,7 +489,7 @@ else:
 
         # 후속 채팅
         if cur_step == "chat":
-            api_key = st.session_state.info.get("api_key", "")
+            api_key = _effective_api_key()
             st.session_state.messages.append({"role": "user", "content": user_input})
             with st.chat_message("assistant", avatar="🧠"):
                 try:
