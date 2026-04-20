@@ -33,7 +33,15 @@ SYSTEM_PROMPT = """
 
 [역할]
 기업의 AX(AI Transformation) 교육을 위한 커리큘럼을 설계하는 챗봇입니다.
-사용자가 제공한 정보를 바탕으로 맞춤형 커리큘럼을 생성합니다.
+특히 'AX Compass' 진단 결과를 분석하여 교육생의 성향에 최적화된 학습 경로를 제안합니다.
+
+[AX Compass 성향별 가이드]
+- 균형형: AI의 효용과 한계를 고루 이해함 -> 심화 실무 및 전략 수립에 집중
+- 이해형: 원리는 아나 실행력이 부족함 -> 직접적인 API 활용 및 실습 비중 강화
+- 과신형: AI를 맹신함 -> 할루시네이션(환각) 확인 및 비판적 사고, 검증 교육 강조
+- 실행형: 일단 써보는 스타일 -> 생산성 도구 중심의 빠른 적용 사례 공유
+- 판단형: 윤리·보안 중시 -> 책임감 있는 AI 활용 및 거버넌스 교육 포함
+- 조심형: 보수적/우려 많음 -> 보안 가이드라인 및 안전한 활용법 안내로 심리적 장벽 제거
 
 [커리큘럼 출력 형식]
 커리큘럼 요청이 들어오면 반드시 아래 구조로 작성합니다:
@@ -62,89 +70,7 @@ SYSTEM_PROMPT = """
 수정·보완 요청을 적극 반영합니다.
 """
 
-AX_TOPICS = [
-    "AI 기초 개념 및 트렌드",
-    "ChatGPT / LLM 업무 활용",
-    "프롬프트 엔지니어링",
-    "AI 기반 데이터 분석",
-    "RAG / 사내 지식 검색 AI",
-    "AI 코딩 보조 (GitHub Copilot 등)",
-    "이미지·영상 생성 AI",
-    "AI 자동화 (RPA + AI)",
-    "LLM API 활용 및 앱 개발",
-    "AI 윤리 및 보안",
-    "AI 전략 수립 / AX 로드맵",
-    "업종별 AI 활용 사례",
-]
-
-AUDIENCE_OPTIONS = [
-    "임원 / 경영진 (C-Level)",
-    "팀장 / 중간관리자",
-    "실무자 (비개발직군)",
-    "개발자 / 엔지니어",
-    "데이터 분석가",
-    "혼합 (다양한 직군)",
-]
-
-LEVEL_OPTIONS = [
-    "입문 (AI 완전 초보)",
-    "기초 (기본 개념 이해)",
-    "중급 (실무 활용)",
-    "고급 (심화 / 개발)",
-]
-
-DURATION_OPTIONS = [
-    "반일 (4시간)",
-    "1일 (8시간)",
-    "2일 (16시간)",
-    "3일 (24시간)",
-    "1주 (5일)",
-    "1개월",
-    "3개월",
-    "6개월",
-]
-
-FORMAT_OPTIONS = [
-    "집합 교육 (오프라인)",
-    "온라인 라이브",
-    "온·오프라인 혼합",
-    "자기주도 학습 (비동기)",
-]
-
-# ── 선택 메뉴 헬퍼 ───────────────────────────────────────────
-def choose(title: str, options: list[str], allow_custom: bool = False) -> str:
-    console.print(f"\n[bold cyan]{title}[/]")
-    for i, opt in enumerate(options, 1):
-        console.print(f"  [yellow]{i}[/]. {opt}")
-    if allow_custom:
-        console.print(f"  [yellow]{len(options)+1}[/]. 직접 입력")
-
-    max_n = len(options) + (1 if allow_custom else 0)
-    while True:
-        choice = IntPrompt.ask("번호 선택", default=1)
-        if 1 <= choice <= len(options):
-            return options[choice - 1]
-        if allow_custom and choice == len(options) + 1:
-            return Prompt.ask("직접 입력")
-        console.print(f"[red]1~{max_n} 사이의 번호를 입력해주세요.[/]")
-
-def choose_multi(title: str, options: list[str]) -> list[str]:
-    console.print(f"\n[bold cyan]{title}[/]")
-    console.print("[dim]번호를 쉼표로 구분해 입력하세요 (예: 1,3,5) / 전체: 0[/]")
-    for i, opt in enumerate(options, 1):
-        console.print(f"  [yellow]{i}[/]. {opt}")
-
-    while True:
-        raw = Prompt.ask("번호 선택").strip()
-        if raw == "0":
-            return options[:]
-        try:
-            indices = [int(x.strip()) for x in raw.split(",")]
-            if all(1 <= idx <= len(options) for idx in indices):
-                return [options[i - 1] for i in indices]
-        except ValueError:
-            pass
-        console.print(f"[red]올바른 형식으로 입력해주세요 (예: 1,3,5)[/]")
+# (기존 선택 방식 관련 상수 및 함수 제거됨)
 
 # ── 정보 수집 ────────────────────────────────────────────────
 def collect_info() -> dict:
@@ -155,72 +81,82 @@ def collect_info() -> dict:
         padding=(1, 4),
     ))
 
-    console.print(Rule("[bold]기본 정보 입력[/]", style="blue"))
+    console.print(Rule("[bold]1단계: 교육 기본 정보[/]", style="blue"))
+    company = Prompt.ask("1. 회사명 또는 팀 이름")
+    goal = Prompt.ask("2. 교육 목표")
+    audience = Prompt.ask("3. 교육 대상자")
+    level = Prompt.ask("4. 현재 AI 활용 수준 (예: 입문, 초급, 중급)")
+    duration = Prompt.ask("5. 교육 기간 또는 총 시간")
+    themes = Prompt.ask("6. 원하는 핵심 주제")
+    constraints = Prompt.ask("7. 꼭 반영해야 할 조건 또는 제한사항", default="없음")
 
-    company = Prompt.ask("\n[bold cyan]회사명 / 기관명[/]")
-    industry = Prompt.ask("[bold cyan]업종 / 도메인[/] [dim](예: 제조, 금융, 의료)[/]")
-    audience = choose("교육 대상", AUDIENCE_OPTIONS, allow_custom=True)
-    level = choose("교육 수준", LEVEL_OPTIONS)
-
-    console.print(Rule("[bold]AX 주요 주제[/]", style="blue"))
-    topics = choose_multi("다루고 싶은 주제 선택 (복수 선택)", AX_TOPICS)
-
-    extra = Prompt.ask(
-        "\n[bold cyan]추가 주제 또는 요청사항[/] [dim](없으면 Enter)[/]",
-        default=""
-    )
-
-    console.print(Rule("[bold]교육 일정[/]", style="blue"))
-    duration = choose("교육 기간", DURATION_OPTIONS, allow_custom=True)
-    fmt = choose("교육 방식", FORMAT_OPTIONS)
+    console.print(Rule("[bold]2단계: AX Compass 진단 결과[/]", style="blue"))
+    console.print("[dim]결과 유형별 인원수를 입력해주세요.[/]")
+    
+    balanced = IntPrompt.ask("1. 균형형 인원수", default=0)
+    understanding = IntPrompt.ask("2. 이해형 인원수", default=0)
+    overconfident = IntPrompt.ask("3. 과신형 인원수", default=0)
+    execution = IntPrompt.ask("4. 실행형 인원수", default=0)
+    judgment = IntPrompt.ask("5. 판단형 인원수", default=0)
+    cautious = IntPrompt.ask("6. 조심형 인원수", default=0)
 
     return {
         "company": company,
-        "industry": industry,
+        "goal": goal,
         "audience": audience,
         "level": level,
-        "topics": topics,
-        "extra": extra,
         "duration": duration,
-        "format": fmt,
+        "themes": themes,
+        "constraints": constraints,
+        "ax_compass": {
+            "균형형": balanced,
+            "이해형": understanding,
+            "과신형": overconfident,
+            "실행형": execution,
+            "판단형": judgment,
+            "조심형": cautious
+        }
     }
 
 # ── 요약 출력 ────────────────────────────────────────────────
 def print_summary(info: dict):
     table = Table(title="입력 정보 요약", show_header=False, box=None, padding=(0, 2))
-    table.add_column(style="bold cyan", width=16)
+    table.add_column(style="bold cyan", width=25)
     table.add_column(style="white")
 
-    topics_str = "\n".join(f"• {t}" for t in info["topics"])
-    if info["extra"]:
-        topics_str += f"\n• {info['extra']} (추가)"
-
-    table.add_row("회사명", info["company"])
-    table.add_row("업종", info["industry"])
-    table.add_row("교육 대상", info["audience"])
-    table.add_row("교육 수준", info["level"])
-    table.add_row("주제", topics_str)
-    table.add_row("교육 기간", info["duration"])
-    table.add_row("교육 방식", info["format"])
+    table.add_row("1. 회사/팀명", info["company"])
+    table.add_row("2. 교육 목표", info["goal"])
+    table.add_row("3. 교육 대상자", info["audience"])
+    table.add_row("4. AI 활용 수준", info["level"])
+    table.add_row("5. 교육 기간", info["duration"])
+    table.add_row("6. 핵심 주제", info["themes"])
+    table.add_row("7. 조건/제한사항", info["constraints"])
+    
+    ax_str = ", ".join([f"{k}: {v}명" for k, v in info["ax_compass"].items() if v > 0])
+    table.add_row("AX Compass 결과", ax_str if ax_str else "입력 없음")
 
     console.print()
     console.print(Panel(table, style="blue", padding=(1, 2)))
 
 # ── 커리큘럼 생성 ────────────────────────────────────────────
 def build_user_message(info: dict) -> str:
-    topics_str = ", ".join(info["topics"])
-    if info["extra"]:
-        topics_str += f", {info['extra']}"
+    ax_results = "\n".join([f"- {k}: {v}명" for k, v in info["ax_compass"].items()])
+    
+    return f"""다음 정보를 바탕으로 맞춤형 AX 교육 커리큘럼을 설계해주세요.
 
-    return f"""다음 정보를 바탕으로 AX 교육 커리큘럼을 설계해주세요.
+### 📋 기본 정보
+1. **회사명 또는 팀 이름**: {info["company"]}
+2. **교육 목표**: {info["goal"]}
+3. **교육 대상자**: {info["audience"]}
+4. **현재 AI 활용 수준**: {info["level"]}
+5. **교육 기간 또는 총 시간**: {info["duration"]}
+6. **원하는 핵심 주제**: {info["themes"]}
+7. **꼭 반영해야 할 조건 또는 제한사항**: {info["constraints"]}
 
-- **회사명**: {info["company"]}
-- **업종/도메인**: {info["industry"]}
-- **교육 대상**: {info["audience"]}
-- **교육 수준**: {info["level"]}
-- **교육 주제**: {topics_str}
-- **교육 기간**: {info["duration"]}
-- **교육 방식**: {info["format"]}
+### 📊 [AX Compass 진단 결과]
+{ax_results}
+
+위의 진단 결과(유형별 인원수)를 고려하여, 각 유형의 특성에 맞는 교육 방식이나 강조점을 커리큘럼에 반영해 주세요.
 """
 
 def stream_response(client: OpenAI, messages: list[dict]) -> str:

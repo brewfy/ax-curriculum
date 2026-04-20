@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  ax-rag-backend:
+    build:
+      context: .
+      dockerfile: 05_7.Dockerfile
+    container_name: ax-advanced-rag-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../Data:/app/data:ro
+      - chroma_data:/app/chroma_db
+    env_file:
+      - .env
+    environment:
+      - DATA_DIR=/app/data
+      - CHROMA_DIR=/app/chroma_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  chroma_data:
+    driver: local
