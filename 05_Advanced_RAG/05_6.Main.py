@@ -2,6 +2,7 @@
 AX Advanced RAG — Streamlit 메인 앱 (대화형 인터페이스)
 """
 import importlib.util
+import json
 import os
 import sys
 from pathlib import Path
@@ -277,6 +278,7 @@ def ensure_vector_db(api_key: str):
         logs: list[str] = []
         col = indexing.init_vector_db(api_key, CHROMA_DIR, PDF_PATH, lambda m: logs.append(m))
         st.session_state.collection = col
+        st.session_state.hybrid_retriever = retrieval.HybridRetriever(col)
         st.session_state.db_status  = logs[-1] if logs else "준비 완료"
         st.session_state.db_ready   = True
     except Exception as e:
@@ -322,11 +324,14 @@ for _k, _v in {
     "messages": [],
     "llm_messages": [],
     "collection": None,
+    "hybrid_retriever": None,
     "db_status": "",
     "db_ready": False,
     "type_idx": 0,
     "type_wip": {},
     "pending_topics": [],
+    "_needs_response": False,
+    "rag_debug": None,
 }.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -380,8 +385,15 @@ def run_app():
 
         # RAG 상태
         if st.session_state.db_ready:
+            cache_count = 0
+            try:
+                cache_path = CHROMA_DIR / "contextual_cache.json"
+                cache_count = len(json.loads(cache_path.read_text(encoding="utf-8")))
+            except Exception:
+                pass
+            cache_txt = f" · 컨텍스트 캐시 {cache_count}개" if cache_count else ""
             st.markdown(
-                '<div style="color:#1a7a4a;font-size:0.78rem;padding:0.2rem 0 0.5rem;">✓ RAG 활성화</div>',
+                f'<div style="color:#1a7a4a;font-size:0.78rem;padding:0.2rem 0 0.5rem;">✓ RAG 활성화{cache_txt}</div>',
                 unsafe_allow_html=True,
             )
         elif st.session_state.db_status:
@@ -452,6 +464,8 @@ def run_app():
                 st.markdown(f'<div class="info-box">{rows}</div>', unsafe_allow_html=True)
 
         # 하단 버튼들
+
+        # 하단 버튼들
         st.markdown("<br>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
@@ -477,6 +491,67 @@ def run_app():
         with st.chat_message(msg["role"], avatar=avatar):
             st.markdown(msg["content"])
 
+    # ── Contextual Retrieval 디버그 패널 (커리큘럼 생성 후 유지) ──
+    debug = st.session_state.get("rag_debug")
+    if debug and st.session_state.step in ("chat", "generating"):
+        st.markdown('<div class="rag-badge">🔍 RAG 컨텍스트 적용됨</div>', unsafe_allow_html=True)
+        with st.expander("🔬 Contextual Retrieval 적용 내역 — 어떤 기술이 어떻게 사용됐나요?"):
+
+            # ── ① Contextual Embedding ────────────────────────────
+            st.markdown("#### ① Contextual Embedding")
+            st.caption("인덱싱 시 LLM이 각 청크마다 '이 청크가 문서 전체에서 어떤 내용인지' 1~2문장을 자동 생성하여 앞에 붙입니다. 청크 단독으로는 잡기 어렵던 상위 개념 쿼리도 벡터 검색에서 히트됩니다.")
+
+            cache_count = 0
+            try:
+                cache_path = CHROMA_DIR / "contextual_cache.json"
+                cache_count = len(json.loads(cache_path.read_text(encoding="utf-8")))
+            except Exception:
+                pass
+
+            if cache_count:
+                st.success(f"✅ 적용됨 — {cache_count}개 청크에 LLM 컨텍스트 생성 및 캐시됨")
+            else:
+                st.info("인덱싱 완료 후 캐시가 생성됩니다.")
+
+            st.divider()
+
+            # ── ② Hybrid Retrieval ────────────────────────────────
+            st.markdown("#### ② Hybrid Retrieval (BM25 + Vector → RRF 병합)")
+            st.caption("의미 기반 벡터 검색과 키워드 빈도 기반 BM25를 각각 실행한 뒤, Reciprocal Rank Fusion(RRF)으로 두 순위를 통합합니다. 한 방식이 놓친 결과를 다른 방식이 보완합니다.")
+
+            vec_set  = set(debug["vec"])
+            bm25_set = set(debug["bm25"])
+            both     = vec_set & bm25_set
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown("**🧮 Vector 검색**")
+                st.caption("의미·문맥 기반")
+                for i, item in enumerate(debug["vec"], 1):
+                    marker = " 🔵" if item in both else ""
+                    st.markdown(f"{i}. {item}{marker}")
+            with c2:
+                st.markdown("**📝 BM25 검색**")
+                st.caption("키워드 빈도 기반")
+                for i, item in enumerate(debug["bm25"], 1):
+                    marker = " 🔵" if item in both else ""
+                    st.markdown(f"{i}. {item}{marker}")
+            with c3:
+                st.markdown("**🔀 RRF 최종 순위**")
+                st.caption("두 방식 통합 결과")
+                for i, item in enumerate(debug["merged"], 1):
+                    if item in both:
+                        badge = " 🔵"
+                    elif item in vec_set:
+                        badge = " 🟣"
+                    elif item in bm25_set:
+                        badge = " 🟡"
+                    else:
+                        badge = ""
+                    st.markdown(f"{i}. {item}{badge}")
+
+            st.caption("🔵 Vector·BM25 공통 &nbsp;&nbsp; 🟣 Vector에서만 선택 &nbsp;&nbsp; 🟡 BM25에서만 선택")
+
 
 # ── 메인 흐름 제어 ─────────────────────────────────────────────
 if not auth.is_logged_in():
@@ -495,13 +570,14 @@ else:
         rag_ctx = ""
         if collection:
             with st.spinner("RAG 검색 중..."):
-                rag_ctx = retrieval.retrieve_type_info(collection, active, n_results=6)
+                rag_ctx, rag_debug = retrieval.retrieve_type_info_debug(
+                    collection, active, n_results=6,
+                    hybrid_retriever=st.session_state.hybrid_retriever,
+                )
+                st.session_state.rag_debug = rag_debug
 
         user_msg = retrieval.build_user_message(edu_info, rag_ctx)
         st.session_state.llm_messages.append({"role": "user", "content": user_msg})
-
-        if collection and rag_ctx:
-            st.markdown('<div class="rag-badge">🔍 RAG 컨텍스트 적용됨</div>', unsafe_allow_html=True)
 
         with st.chat_message("assistant", avatar="🧠"):
             response = _write_stream(_stream_llm(st.session_state.llm_messages))
@@ -509,6 +585,18 @@ else:
         st.session_state.messages.append({"role": "assistant", "content": response})
         st.session_state.llm_messages.append({"role": "assistant", "content": response})
         st.session_state.step = "chat"
+        st.rerun()
+
+    # ════════════════════════════════════════════════════════════
+    #  후속 대화 응답 생성 단계
+    # ════════════════════════════════════════════════════════════
+    if st.session_state.step == "chat" and st.session_state._needs_response:
+        st.session_state._needs_response = False
+        with st.chat_message("assistant", avatar="🧠"):
+            response = _write_stream(_stream_llm(st.session_state.llm_messages))
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        st.session_state.llm_messages.append({"role": "assistant", "content": response})
+        st.rerun()
 
 
     # ── 입력 처리 준비 ─────────────────────────────────────────────
@@ -541,9 +629,13 @@ else:
             enriched = prompt = user_input
             if collection:
                 edu_info = _make_edu_info()
-                enriched = retrieval.enrich_followup(prompt, collection, edu_info.active_types())
+                enriched = retrieval.enrich_followup(
+                    prompt, collection, edu_info.active_types(),
+                    hybrid_retriever=st.session_state.hybrid_retriever,
+                )
             st.session_state.messages.append({"role": "user", "content": prompt})
             st.session_state.llm_messages.append({"role": "user", "content": enriched})
+            st.session_state._needs_response = True
             st.rerun()
 
         # [B] 정보 수집 단계 처리

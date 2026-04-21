@@ -1,8 +1,17 @@
 {
-    "model": "sonnet",
-    "env": {
-        "MAX_THINKING_TOKENS": "10000",
-        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50",
-        "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
-    }
+  "env": {
+    "MAX_THINKING_TOKENS": "10000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(irm https://raw.githubusercontent.com/JuliusBrussee/caveman/main/hooks/install.ps1)",
+      "Bash(iex)",
+      "PowerShell(irm https://raw.githubusercontent.com/JuliusBrussee/caveman/main/hooks/install.ps1 | iex)",
+      "Bash(rtk ls *)",
+      "Bash(rtk git *)"
+    ]
+  },
+  "model": "sonnet"
 }
