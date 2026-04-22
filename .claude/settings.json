@@ -10,7 +10,9 @@
       "Bash(iex)",
       "PowerShell(irm https://raw.githubusercontent.com/JuliusBrussee/caveman/main/hooks/install.ps1 | iex)",
       "Bash(rtk ls *)",
-      "Bash(rtk git *)"
+      "Bash(rtk git *)",
+      "Bash(c:/dev/ax-workspace/venv/Scripts/python -c \"from sentence_transformers import CrossEncoder; print\\('OK'\\)\")",
+      "Bash(c:/dev/ax-workspace/venv/Scripts/python -c ' *)"
     ]
   },
   "model": "sonnet"

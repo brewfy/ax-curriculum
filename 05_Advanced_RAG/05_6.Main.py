@@ -277,8 +277,10 @@ def ensure_vector_db(api_key: str):
     try:
         logs: list[str] = []
         col = indexing.init_vector_db(api_key, CHROMA_DIR, PDF_PATH, lambda m: logs.append(m))
+        reranker = retrieval.Reranker()
         st.session_state.collection = col
-        st.session_state.hybrid_retriever = retrieval.HybridRetriever(col)
+        st.session_state.hybrid_retriever = retrieval.HybridRetriever(col, reranker=reranker)
+        st.session_state.reranker = reranker
         st.session_state.db_status  = logs[-1] if logs else "준비 완료"
         st.session_state.db_ready   = True
     except Exception as e:
@@ -325,6 +327,7 @@ for _k, _v in {
     "llm_messages": [],
     "collection": None,
     "hybrid_retriever": None,
+    "reranker": None,
     "db_status": "",
     "db_ready": False,
     "type_idx": 0,
@@ -391,8 +394,17 @@ def run_app():
                 cache_count = len(json.loads(cache_path.read_text(encoding="utf-8")))
             except Exception:
                 pass
-            cache_txt = f" · 컨텍스트 캐시 {cache_count}개" if cache_count else ""
+
+            hr = st.session_state.hybrid_retriever
+            total_chunks = len(hr._ids) if hr and hr._ids else 0
+            full_chunks    = sum(1 for m in hr._metas if m.get("is_primary") == 1) if hr else 0
+            section_chunks = total_chunks - full_chunks
+
+            cache_txt  = f" · 캐시 {cache_count}개" if cache_count else ""
+            chunk_txt  = f" · BM25 {total_chunks}청크 (full {full_chunks} + 섹션 {section_chunks})" if total_chunks else ""
             st.markdown(
+                f'<div style="color:#1a7a4a;font-size:0.78rem;padding:0.2rem 0 0.1rem;">✓ RAG 활성화{cache_txt}</div>'
+                f'<div style="color:#888;font-size:0.72rem;padding:0 0 0.5rem;">{chunk_txt}</div>' if chunk_txt else
                 f'<div style="color:#1a7a4a;font-size:0.78rem;padding:0.2rem 0 0.5rem;">✓ RAG 활성화{cache_txt}</div>',
                 unsafe_allow_html=True,
             )
@@ -409,8 +421,6 @@ def run_app():
             idx = st.session_state.type_idx
             rows = ""
             for i, tp in enumerate(TYPES_ORDER):
-                grp = TYPE_GROUP[tp]
-                grp_cls = {"A": "group-a", "B": "group-b", "C": "group-c"}[grp]
                 if i < idx:
                     rows += f'<div class="type-row done">✓ {tp} <span>{wip.get(tp, 0)}명</span></div>'
                 elif i == idx:
@@ -509,7 +519,7 @@ def run_app():
                 pass
 
             if cache_count:
-                st.success(f"✅ 적용됨 — {cache_count}개 청크에 LLM 컨텍스트 생성 및 캐시됨")
+                st.success(f"✅ 적용됨 — {cache_count}개 섹션 청크에 LLM 컨텍스트 생성 및 캐시됨")
             else:
                 st.info("인덱싱 완료 후 캐시가 생성됩니다.")
 
@@ -517,25 +527,42 @@ def run_app():
 
             # ── ② Hybrid Retrieval ────────────────────────────────
             st.markdown("#### ② Hybrid Retrieval (BM25 + Vector → RRF 병합)")
-            st.caption("의미 기반 벡터 검색과 키워드 빈도 기반 BM25를 각각 실행한 뒤, Reciprocal Rank Fusion(RRF)으로 두 순위를 통합합니다. 한 방식이 놓친 결과를 다른 방식이 보완합니다.")
+
+            hr = st.session_state.hybrid_retriever
+            total_chunks   = len(hr._ids) if hr and hr._ids else 0
+            full_chunks    = sum(1 for m in hr._metas if m.get("is_primary") == 1) if hr else 0
+            section_chunks = total_chunks - full_chunks
+
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("BM25 인덱스 총 청크", f"{total_chunks}개")
+            col_m2.metric("Full 청크", f"{full_chunks}개", help="문서 전체 내용")
+            col_m3.metric("섹션 청크 (Contextual)", f"{section_chunks}개", help="강점·도전·교육접근법·태그 — LLM 컨텍스트 prepend됨")
+
+            st.caption(
+                "오늘 개선: BM25와 벡터 검색 모두 **섹션 청크(Contextual Embedding 적용)**를 포함합니다. "
+                "이전에는 full 청크만 검색 대상이었습니다."
+            )
 
             vec_set  = set(debug["vec"])
             bm25_set = set(debug["bm25"])
             both     = vec_set & bm25_set
+
+            def _render_item(i: int, item: str, badge: str):
+                is_section = "/" in item
+                section_tag = ' <span style="font-size:0.7rem;background:#e8f0fe;color:#1a56db;border-radius:3px;padding:1px 4px;">섹션</span>' if is_section else ""
+                st.markdown(f"{i}. {item}{section_tag}{badge}", unsafe_allow_html=True)
 
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown("**🧮 Vector 검색**")
                 st.caption("의미·문맥 기반")
                 for i, item in enumerate(debug["vec"], 1):
-                    marker = " 🔵" if item in both else ""
-                    st.markdown(f"{i}. {item}{marker}")
+                    _render_item(i, item, " 🔵" if item in both else "")
             with c2:
                 st.markdown("**📝 BM25 검색**")
                 st.caption("키워드 빈도 기반")
                 for i, item in enumerate(debug["bm25"], 1):
-                    marker = " 🔵" if item in both else ""
-                    st.markdown(f"{i}. {item}{marker}")
+                    _render_item(i, item, " 🔵" if item in both else "")
             with c3:
                 st.markdown("**🔀 RRF 최종 순위**")
                 st.caption("두 방식 통합 결과")
@@ -548,9 +575,51 @@ def run_app():
                         badge = " 🟡"
                     else:
                         badge = ""
-                    st.markdown(f"{i}. {item}{badge}")
+                    _render_item(i, item, badge)
 
-            st.caption("🔵 Vector·BM25 공통 &nbsp;&nbsp; 🟣 Vector에서만 선택 &nbsp;&nbsp; 🟡 BM25에서만 선택")
+            st.caption("🔵 공통 &nbsp;🟣 Vector에서만 &nbsp;🟡 BM25에서만 &nbsp;&nbsp;`섹션` = Contextual Embedding 적용 청크")
+
+            st.divider()
+
+            # ── ③ Reranking ───────────────────────────────────────
+            st.markdown("#### ③ Reranking (Cross-Encoder)")
+            st.caption(
+                "RRF 후보(top-k×2)를 Cross-Encoder(`BAAI/bge-reranker-base`)로 재평가합니다. "
+                "쿼리와 문서 쌍을 직접 비교하여 의미적 적합도 점수를 계산 — Bi-Encoder 벡터 검색보다 정확합니다."
+            )
+
+            reranker = st.session_state.get("reranker")
+            rerank_active = debug.get("rerank_active", False)
+
+            if reranker and reranker.available:
+                st.success("✅ 활성화 — `BAAI/bge-reranker-base` (한국어 포함 다국어 지원)")
+            else:
+                st.warning("⚠️ 비활성화 — `sentence-transformers` 설치 필요: `pip install sentence-transformers`")
+
+            if rerank_active and debug.get("reranked"):
+                merged_labels  = debug.get("merged", [])
+                reranked_labels = debug.get("reranked", [])
+                scores         = debug.get("rerank_scores", [])
+
+                cr1, cr2 = st.columns(2)
+                with cr1:
+                    st.markdown("**RRF 순위 (Rerank 전)**")
+                    st.caption("BM25+Vector 병합 결과")
+                    for i, item in enumerate(merged_labels, 1):
+                        st.markdown(f"{i}. {item}")
+                with cr2:
+                    st.markdown("**최종 순위 (Rerank 후)**")
+                    st.caption("Cross-Encoder 재평가 결과")
+                    for i, (item, score) in enumerate(zip(reranked_labels, scores), 1):
+                        prev_rank = merged_labels.index(item) + 1 if item in merged_labels else "?"
+                        arrow = "↑" if prev_rank > i else ("↓" if prev_rank < i else "=")
+                        color = "#1a7a4a" if prev_rank > i else ("#b45a00" if prev_rank < i else "#999")
+                        st.markdown(
+                            f'{i}. {item} &nbsp;<span style="color:{color};font-size:0.8rem;">{arrow}{prev_rank}→{i}</span>'
+                            f' &nbsp;<span style="color:#888;font-size:0.75rem;">({score:.3f})</span>',
+                            unsafe_allow_html=True,
+                        )
+                st.caption("↑ 순위 상승 &nbsp;↓ 순위 하락 &nbsp;= 순위 유지")
 
 
 # ── 메인 흐름 제어 ─────────────────────────────────────────────

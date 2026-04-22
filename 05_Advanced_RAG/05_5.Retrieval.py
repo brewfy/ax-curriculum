@@ -36,16 +36,58 @@ def _rrf(rankings: list[list[str]], k: int = 60) -> list[str]:
     return sorted(scores, key=lambda x: scores[x], reverse=True)
 
 
-# ── Hybrid Retriever (BM25 + Vector + RRF) ───────────────────
+# ── Reranker (Cross-Encoder) ─────────────────────────────────
+class Reranker:
+    """BAAI/bge-reranker-base 기반 Cross-Encoder 재순위화.
+
+    RRF 병합 후 후보(top-k*2)를 쿼리와 문서 쌍으로 평가하여 최종 top-k를 선별한다.
+    한국어 포함 다국어 지원. sentence-transformers 미설치 시 graceful fallback.
+    """
+
+    MODEL = "BAAI/bge-reranker-base"
+
+    def __init__(self):
+        self._model = None
+        self._try_load()
+
+    def _try_load(self):
+        try:
+            from sentence_transformers import CrossEncoder
+            self._model = CrossEncoder(self.MODEL)
+        except Exception:
+            pass
+
+    @property
+    def available(self) -> bool:
+        return self._model is not None
+
+    def rerank(
+        self,
+        query: str,
+        doc_ids: list[str],
+        doc_texts: list[str],
+        top_k: int,
+    ) -> tuple[list[str], list[float]]:
+        """(reranked_ids, scores) 반환. 모델 없으면 원본 순서 유지."""
+        if not self._model or not doc_ids:
+            return doc_ids[:top_k], [0.0] * min(top_k, len(doc_ids))
+        pairs = [(query, text) for text in doc_texts]
+        scores = self._model.predict(pairs).tolist()
+        ranked = sorted(zip(scores, doc_ids), key=lambda x: x[0], reverse=True)[:top_k]
+        return [r[1] for r in ranked], [r[0] for r in ranked]
+
+
+# ── Hybrid Retriever (BM25 + Vector + RRF + Rerank) ──────────
 class HybridRetriever:
     """벡터 검색과 BM25 키워드 검색을 RRF로 결합하는 하이브리드 검색기.
 
-    컬렉션 초기화 시 is_primary=1인 구조화 문서 청크로 BM25 인덱스를 구축한다.
-    query() 호출 시 벡터 검색과 BM25 검색을 병렬 수행 후 RRF로 병합한다.
+    ax_compass_structured 소스의 모든 청크(full + contextually enriched 섹션)를
+    BM25 인덱스와 벡터 검색 모두에 포함하여 Contextual Embedding 효과를 극대화한다.
     """
 
-    def __init__(self, collection: chromadb.Collection):
+    def __init__(self, collection: chromadb.Collection, reranker: "Reranker | None" = None):
         self.collection = collection
+        self._reranker = reranker
         self._ids: list[str] = []
         self._docs: list[str] = []
         self._metas: list[dict] = []
@@ -60,10 +102,7 @@ class HybridRetriever:
 
         try:
             result = self.collection.get(
-                where={"$and": [
-                    {"source": {"$eq": "ax_compass_structured"}},
-                    {"is_primary": {"$eq": 1}},
-                ]},
+                where={"source": {"$eq": "ax_compass_structured"}},
                 include=["documents", "metadatas"],
             )
             self._ids = result["ids"]
@@ -71,7 +110,6 @@ class HybridRetriever:
             self._metas = result["metadatas"]
             if self._ids:
                 tokenized = [doc.split() for doc in self._docs]
-                from rank_bm25 import BM25Okapi
                 self._bm25 = BM25Okapi(tokenized)
         except Exception:
             pass
@@ -79,21 +117,25 @@ class HybridRetriever:
     def _label(self, doc_id: str) -> str:
         try:
             idx = self._ids.index(doc_id)
-            return self._metas[idx].get("type", doc_id)
+            meta = self._metas[idx]
+            type_ = meta.get("type", "")
+            section = meta.get("section_title", "")
+            return f"{type_}/{section}" if section else type_
         except (ValueError, IndexError):
             return doc_id
 
     def _query_internal(self, query_text: str, n_results: int) -> tuple[str, dict]:
+        # rerank 시 후보를 2배 확보 후 top-k로 압축
+        rerank_active = self._reranker is not None and self._reranker.available
+        fetch_n = min(n_results * 2 if rerank_active else n_results, len(self._ids))
         n = min(n_results, len(self._ids))
-        where = {"$and": [
-            {"source": {"$eq": "ax_compass_structured"}},
-            {"is_primary": {"$eq": 1}},
-        ]}
 
         vec_ids: list[str] = []
         try:
             vec_res = self.collection.query(
-                query_texts=[query_text], n_results=n, where=where,
+                query_texts=[query_text],
+                n_results=fetch_n,
+                where={"source": {"$eq": "ax_compass_structured"}},
             )
             vec_ids = vec_res["ids"][0] if vec_res["ids"] else []
         except Exception:
@@ -102,19 +144,35 @@ class HybridRetriever:
         bm25_ids: list[str] = []
         if self._bm25:
             scores = self._bm25.get_scores(query_text.split())
-            ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:n]
+            ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:fetch_n]
             bm25_ids = [self._ids[i] for i in ranked]
 
         merged = _rrf([vec_ids, bm25_ids]) if bm25_ids else vec_ids
         id_to_doc = dict(zip(self._ids, self._docs))
-        docs = [id_to_doc[i] for i in merged[:n] if i in id_to_doc]
+
+        # RRF 후 reranking
+        candidate_ids  = merged[:fetch_n]
+        candidate_docs = [id_to_doc[i] for i in candidate_ids if i in id_to_doc]
+
+        if rerank_active:
+            reranked_ids, rerank_scores = self._reranker.rerank(
+                query_text, candidate_ids, candidate_docs, top_k=n
+            )
+        else:
+            reranked_ids  = candidate_ids[:n]
+            rerank_scores = []
+
+        final_docs = [id_to_doc[i] for i in reranked_ids if i in id_to_doc]
 
         debug = {
-            "vec":    [self._label(i) for i in vec_ids],
-            "bm25":   [self._label(i) for i in bm25_ids],
-            "merged": [self._label(i) for i in merged[:n]],
+            "vec":           [self._label(i) for i in vec_ids[:n]],
+            "bm25":          [self._label(i) for i in bm25_ids[:n]],
+            "merged":        [self._label(i) for i in candidate_ids[:n]],
+            "reranked":      [self._label(i) for i in reranked_ids],
+            "rerank_scores": [round(s, 4) for s in rerank_scores],
+            "rerank_active": rerank_active,
         }
-        return "\n\n---\n\n".join(docs), debug
+        return "\n\n---\n\n".join(final_docs), debug
 
     def query(self, query_text: str, n_results: int = 6) -> str:
         """하이브리드 검색을 수행하고 상위 문서를 개행 구분 문자열로 반환한다."""
@@ -154,7 +212,7 @@ def retrieve_type_info(
     if section:
         where = {"$and": [{"source": {"$eq": "ax_compass_structured"}}, {"section": {"$eq": section}}]}
     else:
-        where = {"$and": [{"source": {"$eq": "ax_compass_structured"}}, {"is_primary": {"$eq": 1}}]}
+        where = {"source": {"$eq": "ax_compass_structured"}}
 
     try:
         results = collection.query(
