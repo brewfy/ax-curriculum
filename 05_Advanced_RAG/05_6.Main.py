@@ -611,11 +611,18 @@ def run_app():
                     st.markdown("**최종 순위 (Rerank 후)**")
                     st.caption("Cross-Encoder 재평가 결과")
                     for i, (item, score) in enumerate(zip(reranked_labels, scores), 1):
-                        prev_rank = merged_labels.index(item) + 1 if item in merged_labels else "?"
-                        arrow = "↑" if prev_rank > i else ("↓" if prev_rank < i else "=")
-                        color = "#1a7a4a" if prev_rank > i else ("#b45a00" if prev_rank < i else "#999")
+                        prev_rank = merged_labels.index(item) + 1 if item in merged_labels else None
+                        if prev_rank is None:
+                            arrow, color = "★", "#6b6bcc"
+                        elif prev_rank > i:
+                            arrow, color = "↑", "#1a7a4a"
+                        elif prev_rank < i:
+                            arrow, color = "↓", "#b45a00"
+                        else:
+                            arrow, color = "=", "#999"
+                        rank_label = f"{prev_rank}→{i}" if prev_rank is not None else f"new→{i}"
                         st.markdown(
-                            f'{i}. {item} &nbsp;<span style="color:{color};font-size:0.8rem;">{arrow}{prev_rank}→{i}</span>'
+                            f'{i}. {item} &nbsp;<span style="color:{color};font-size:0.8rem;">{arrow}{rank_label}</span>'
                             f' &nbsp;<span style="color:#888;font-size:0.75rem;">({score:.3f})</span>',
                             unsafe_allow_html=True,
                         )
