@@ -120,32 +120,46 @@ def rule_check(answer: str, rules: dict) -> dict:
 
 # ── 내부 파서 ────────────────────────────────────────────────
 def _count_sessions(text: str) -> int:
-    patterns = [
+    # 명시적 번호 패턴
+    numbered_patterns = [
         r"세션\s*\d+",
         r"Session\s*\d+",
         r"\d+\s*차시",
         r"모듈\s*\d+",
         r"Module\s*\d+",
+        r"Day\s*\d+",
+        r"\d+일\s*차",
     ]
     found: set[str] = set()
-    for p in patterns:
+    for p in numbered_patterns:
         found.update(re.findall(p, text, re.IGNORECASE))
+
+    # fallback: 스케줄 키워드가 포함된 마크다운 헤더 (## / ###)
     if not found:
-        # fallback: level-2/3 headers with schedule keywords
         found = set(re.findall(
-            r"^#{2,3}\s+.*(세션|Session|차시|실습|이론|오전|오후)",
-            text, re.MULTILINE
+            r"^#{2,3}\s+.*(세션|Session|차시|실습|이론|오전|오후|모듈)",
+            text, re.MULTILINE | re.IGNORECASE,
         ))
+
+    # 2차 fallback: 오전/오후 블록 개수 (Day × 2)
+    if not found:
+        am_pm = re.findall(r"(오전|오후)\s*(세션|실습|이론|강의)", text)
+        if am_pm:
+            return len(am_pm)
+
     return len(found)
 
 
 def _extract_total_hours(text: str) -> float | None:
+    # "총 N시간" 우선
     m = re.search(r"총\s*(\d+(?:\.\d+)?)\s*시간", text)
     if m:
         return float(m.group(1))
-    m = re.search(r"(\d+)\s*일.*?(\d+)\s*시간", text)
+    # "N일 (M시간)" → M이 총 시간
+    m = re.search(r"\d+\s*일\s*[(\s]\s*(\d+(?:\.\d+)?)\s*시간", text)
     if m:
-        return float(m.group(1)) * float(m.group(2))
+        return float(m.group(1))
+    # 단독 "N시간"
     m = re.search(r"(\d+)\s*시간", text)
     if m:
         return float(m.group(1))
