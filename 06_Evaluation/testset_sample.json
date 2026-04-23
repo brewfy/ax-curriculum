@@ -1,0 +1,89 @@
+{
+  "_schema_version": "1.0",
+  "test_cases": [
+    {
+      "id": "tc_001",
+      "input": {
+        "company": "스타트업A",
+        "goal": "ChatGPT 등 AI 도구를 실무에 바로 활용할 수 있는 역량 강화",
+        "audience": "전 직원 (비개발자 포함)",
+        "level": "초급",
+        "topics": ["ChatGPT 활용", "프롬프트 작성", "업무 자동화"],
+        "extra": "",
+        "duration": "1일 (8시간)",
+        "type_counts": {
+          "균형형": 3,
+          "이해형": 4,
+          "과신형": 5,
+          "실행형": 6,
+          "판단형": 2,
+          "조심형": 2
+        }
+      },
+      "expected": {
+        "retrieval_ground_truth": ["균형형/강점", "이해형/강점", "과신형/도전", "실행형/교육접근법"],
+        "required_topics": ["ChatGPT", "프롬프트", "자동화"],
+        "session_count_range": [3, 6],
+        "total_hours": 8,
+        "groups_required": ["A", "B", "C"]
+      },
+      "generated_answer": null
+    },
+    {
+      "id": "tc_002",
+      "input": {
+        "company": "중견기업B",
+        "goal": "부서별 AI 전략 수립 및 데이터 기반 의사결정 역량 강화",
+        "audience": "팀장급 이상 리더십",
+        "level": "중급",
+        "topics": ["AI 전략 수립", "데이터 분석", "AI 리스크 관리", "조직 변화 관리"],
+        "extra": "의사결정 프레임워크 포함",
+        "duration": "2일 (16시간)",
+        "type_counts": {
+          "균형형": 6,
+          "이해형": 5,
+          "과신형": 4,
+          "실행형": 3,
+          "판단형": 7,
+          "조심형": 5
+        }
+      },
+      "expected": {
+        "retrieval_ground_truth": ["판단형/강점", "판단형/도전", "균형형/교육접근법", "조심형/도전"],
+        "required_topics": ["AI 전략", "데이터", "리스크", "의사결정"],
+        "session_count_range": [6, 12],
+        "total_hours": 16,
+        "groups_required": ["A", "B", "C"]
+      },
+      "generated_answer": null
+    },
+    {
+      "id": "tc_003",
+      "input": {
+        "company": "대기업C",
+        "goal": "생성형 AI를 활용한 업무 혁신 프로젝트 기획 및 실행",
+        "audience": "R&D / 기획 부서",
+        "level": "고급",
+        "topics": ["생성형 AI 심화", "AI 프로젝트 설계", "프롬프트 엔지니어링", "AI 윤리"],
+        "extra": "",
+        "duration": "3일 (24시간)",
+        "type_counts": {
+          "균형형": 8,
+          "이해형": 10,
+          "과신형": 6,
+          "실행형": 4,
+          "판단형": 5,
+          "조심형": 7
+        }
+      },
+      "expected": {
+        "retrieval_ground_truth": ["이해형/강점", "이해형/교육접근법", "균형형/교육접근법", "과신형/도전"],
+        "required_topics": ["생성형 AI", "프롬프트 엔지니어링", "AI 윤리", "프로젝트"],
+        "session_count_range": [8, 16],
+        "total_hours": 24,
+        "groups_required": ["A", "B", "C"]
+      },
+      "generated_answer": null
+    }
+  ]
+}

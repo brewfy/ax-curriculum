@@ -12,7 +12,15 @@
       "Bash(rtk ls *)",
       "Bash(rtk git *)",
       "Bash(c:/dev/ax-workspace/venv/Scripts/python -c \"from sentence_transformers import CrossEncoder; print\\('OK'\\)\")",
-      "Bash(c:/dev/ax-workspace/venv/Scripts/python -c ' *)"
+      "Bash(c:/dev/ax-workspace/venv/Scripts/python -c ' *)",
+      "Bash(node /c/Users/user/.claude/hooks/caveman-activate.js --version)",
+      "Bash(rtk init *)",
+      "Bash(node \"C:/Users/user/.claude/hooks/caveman-activate.js\")",
+      "Bash(rtk grep *)",
+      "Bash(python -c ' *)"
+    ],
+    "additionalDirectories": [
+      "c:\\dev\\ax-workspace"
     ]
   },
   "model": "sonnet"
