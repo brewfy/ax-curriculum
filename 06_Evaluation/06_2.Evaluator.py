@@ -5,7 +5,6 @@ ChromaDB + HybridRetriever(Reranker 포함)를 초기화하고
 테스트 케이스별로 4개 지표를 측정한다.
 """
 import importlib.util
-import json
 import os
 import sys
 from dataclasses import asdict, dataclass, field
@@ -43,6 +42,7 @@ def _load(name: str, path: Path):
 
 metrics = _load("eval_metrics", _EVAL_DIR / "06_1.Metrics.py")
 retrieval = _load("retrieval", _RAG_DIR / "05_5.Retrieval.py")
+schemas = _load("schemas", _RAG_DIR / "05_2.Schemas.py")
 
 
 # ── 결과 데이터클래스 ─────────────────────────────────────────
@@ -106,7 +106,10 @@ def _build_user_message(inp: dict, context: str) -> str:
   - C그룹 (판단형+조심형): {group_counts['C']}명
   - 총 인원: {total}명
 
-이론 수업은 전체 동일하게 진행하되, 각 그룹별 맞춤 실습을 설계해주세요."""
+이론 수업은 전체 동일하게 진행하되, 각 그룹별 특성에 맞는 맞춤형 실습/프로젝트를 설계해주세요.
+- A그룹 (균형형+이해형): AI 활용 이해도가 높거나 학습 의욕이 강한 그룹. 심화 프로젝트 중심.
+- B그룹 (과신형+실행형): 행동력과 실행력이 높지만 검증과 품질 관리가 필요한 그룹. 실행+검증 프로세스 중심.
+- C그룹 (판단형+조심형): 신중하고 분석적이지만 실행에 심리적 장벽이 있는 그룹. 체계적 단계별 실습 중심."""
 
 
 # ── Evaluator ─────────────────────────────────────────────────
@@ -116,6 +119,7 @@ class Evaluator:
         chroma_path: str = CHROMA_DIR,
         collection_name: str = COLLECTION_NAME,
         openai_api_key: str | None = None,
+        bm25_weight: float = 1.0,
     ):
         api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
         self.llm = OpenAI(api_key=api_key)
@@ -127,7 +131,7 @@ class Evaluator:
         col = chroma.get_collection(name=collection_name, embedding_function=ef)
 
         reranker = retrieval.Reranker()
-        self.retriever = retrieval.HybridRetriever(col, reranker=reranker)
+        self.retriever = retrieval.HybridRetriever(col, reranker=reranker, bm25_weight=bm25_weight)
 
     # ── 검색 ─────────────────────────────────────────────────
     def _retrieve(self, query: str, n: int = 6) -> tuple[list[str], str]:
@@ -143,11 +147,11 @@ class Evaluator:
         resp = self.llm.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "당신은 AX 교육 전문가입니다. 맞춤형 교육 커리큘럼을 설계해주세요."},
+                {"role": "system", "content": schemas.SYSTEM_PROMPT},
                 {"role": "user", "content": user_message},
             ],
             temperature=0.3,
-            max_tokens=2000,
+            max_tokens=4000,
         )
         return resp.choices[0].message.content
 
@@ -162,7 +166,13 @@ class Evaluator:
         )
 
         try:
-            query = "AX Compass 유형별 특성과 교육 접근법: " + ", ".join(inp.get("topics", []))
+            counts = inp.get("type_counts", {})
+            dominant = sorted(counts, key=counts.get, reverse=True)[:3]
+            query = (
+                "AX Compass 유형별 특성과 교육 접근법: "
+                + ", ".join(inp.get("topics", []))
+                + (" | 주요 유형: " + " ".join(dominant) if dominant else "")
+            )
             retrieved_labels, context = self._retrieve(query, n=6)
 
             # ① Precision@k

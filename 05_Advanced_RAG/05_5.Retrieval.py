@@ -27,12 +27,20 @@ schemas = _load_sibling("schemas", "05_2.Schemas.py")
 
 
 # ── Reciprocal Rank Fusion ───────────────────────────────────
-def _rrf(rankings: list[list[str]], k: int = 60) -> list[str]:
-    """여러 랭킹 리스트를 RRF 점수로 합산하여 단일 순위 리스트로 반환한다."""
+def _rrf(
+    rankings: list[list[str]],
+    k: int = 60,
+    weights: list[float] | None = None,
+) -> list[str]:
+    """여러 랭킹 리스트를 RRF 점수로 합산하여 단일 순위 리스트로 반환한다.
+
+    weights: 각 랭킹의 가중치 (None이면 균등). 길이는 rankings와 동일해야 한다.
+    """
+    w = weights if weights else [1.0] * len(rankings)
     scores: dict[str, float] = {}
-    for ranking in rankings:
+    for ranking, weight in zip(rankings, w):
         for rank, doc_id in enumerate(ranking):
-            scores[doc_id] = scores.get(doc_id, 0) + 1.0 / (k + rank + 1)
+            scores[doc_id] = scores.get(doc_id, 0) + weight / (k + rank + 1)
     return sorted(scores, key=lambda x: scores[x], reverse=True)
 
 
@@ -85,9 +93,15 @@ class HybridRetriever:
     BM25 인덱스와 벡터 검색 모두에 포함하여 Contextual Embedding 효과를 극대화한다.
     """
 
-    def __init__(self, collection: chromadb.Collection, reranker: "Reranker | None" = None):
+    def __init__(
+        self,
+        collection: chromadb.Collection,
+        reranker: "Reranker | None" = None,
+        bm25_weight: float = 1.0,
+    ):
         self.collection = collection
         self._reranker = reranker
+        self._bm25_weight = bm25_weight
         self._ids: list[str] = []
         self._docs: list[str] = []
         self._metas: list[dict] = []
@@ -147,7 +161,7 @@ class HybridRetriever:
             ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:fetch_n]
             bm25_ids = [self._ids[i] for i in ranked]
 
-        merged = _rrf([vec_ids, bm25_ids]) if bm25_ids else vec_ids
+        merged = _rrf([vec_ids, bm25_ids], weights=[1.0, self._bm25_weight]) if bm25_ids else vec_ids
         id_to_doc = dict(zip(self._ids, self._docs))
 
         # RRF 후 reranking

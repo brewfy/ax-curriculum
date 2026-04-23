@@ -1,0 +1,114 @@
+{
+  "generated_at": "2026-04-23T10:05:57.251566",
+  "elapsed_seconds": 94.2,
+  "summary": {
+    "total_cases": 3,
+    "passed_cases": 3,
+    "avg_aggregate_score": 0.6389,
+    "avg_precision_at_k": 0.0,
+    "avg_faithfulness": 1.0,
+    "avg_requirement_coverage": 1.0,
+    "rule_pass_rate": 0.0
+  },
+  "cases": [
+    {
+      "id": "tc_001",
+      "summary": "스타트업A / 1일 (8시간)",
+      "precision_at_k": 0.0,
+      "faithfulness": 1.0,
+      "requirement_coverage": 1.0,
+      "rule_check": {
+        "passed": false,
+        "score": 0.6667,
+        "details": {
+          "session_count": {
+            "value": 1,
+            "expected": "3~6",
+            "pass": false
+          },
+          "total_hours": {
+            "value": 8.0,
+            "expected": 8,
+            "pass": true
+          },
+          "groups_present": {
+            "value": {
+              "A": true,
+              "B": true,
+              "C": true
+            },
+            "pass": true
+          }
+        }
+      },
+      "aggregate_score": 0.6667,
+      "error": null
+    },
+    {
+      "id": "tc_002",
+      "summary": "중견기업B / 2일 (16시간)",
+      "precision_at_k": 0.0,
+      "faithfulness": 1.0,
+      "requirement_coverage": 1.0,
+      "rule_check": {
+        "passed": false,
+        "score": 0.6667,
+        "details": {
+          "session_count": {
+            "value": 6,
+            "expected": "6~12",
+            "pass": true
+          },
+          "total_hours": {
+            "value": 32.0,
+            "expected": 16,
+            "pass": false
+          },
+          "groups_present": {
+            "value": {
+              "A": true,
+              "B": true,
+              "C": true
+            },
+            "pass": true
+          }
+        }
+      },
+      "aggregate_score": 0.6667,
+      "error": null
+    },
+    {
+      "id": "tc_003",
+      "summary": "대기업C / 3일 (24시간)",
+      "precision_at_k": 0.0,
+      "faithfulness": 1.0,
+      "requirement_coverage": 1.0,
+      "rule_check": {
+        "passed": false,
+        "score": 0.3333,
+        "details": {
+          "session_count": {
+            "value": 1,
+            "expected": "8~16",
+            "pass": false
+          },
+          "total_hours": {
+            "value": 72.0,
+            "expected": 24,
+            "pass": false
+          },
+          "groups_present": {
+            "value": {
+              "A": true,
+              "B": true,
+              "C": true
+            },
+            "pass": true
+          }
+        }
+      },
+      "aggregate_score": 0.5833,
+      "error": null
+    }
+  ]
+}
