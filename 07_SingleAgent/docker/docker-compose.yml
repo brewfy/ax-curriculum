@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ../..          # 워크스페이스 루트
+      dockerfile: 07_SingleAgent/docker/Dockerfile
+    image: ax-single-agent-backend:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../05_Advanced_RAG/chroma_db:/data/chroma_db:ro
+    env_file:
+      - ../.env
+    environment:
+      - RAG_DIR=/app/rag
+      - CHROMA_DIR=/data/chroma_db
+      - PROMPTS_DIR=/app/prompts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
