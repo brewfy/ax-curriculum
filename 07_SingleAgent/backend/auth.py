@@ -1,3 +1,4 @@
+import hashlib
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -17,8 +18,16 @@ USERS: dict[str, str] = {
 _bearer = HTTPBearer()
 
 
+def _sha256(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()
+
+
 def authenticate(username: str, password: str) -> bool:
-    return USERS.get(username) == password
+    stored = USERS.get(username)
+    if stored is None:
+        return False
+    # plain text 또는 SHA-256 해시 모두 허용
+    return stored == password or stored == _sha256(password)
 
 
 def create_token(username: str, expires: Optional[timedelta] = None) -> str:

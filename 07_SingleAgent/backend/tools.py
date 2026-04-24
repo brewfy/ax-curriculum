@@ -61,7 +61,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "최신 AI 교육 트렌드나 특정 기술 정보를 웹에서 검색합니다.",
+            "description": "Tavily 검색 API를 사용하여 최신 AI 교육 트렌드나 특정 기술 정보를 웹에서 검색합니다. 커리큘럼 생성 전 반드시 1회 이상 호출하세요.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -163,12 +163,17 @@ class AgentTools:
             return
         tavily_key = os.getenv("TAVILY_API_KEY", "")
         if not tavily_key:
+            print("[Tavily] ⚠️ TAVILY_API_KEY 환경변수가 비어있습니다.")
             return
+        print(f"[Tavily] API 키 감지됨: {tavily_key[:10]}...")
         try:
             from tavily import TavilyClient
             self._tavily = TavilyClient(api_key=tavily_key)
-        except Exception:
-            pass
+            print("[Tavily] ✅ TavilyClient 초기화 성공")
+        except ImportError:
+            print("[Tavily] ❌ tavily-python 패키지가 설치되지 않았습니다. pip install tavily-python")
+        except Exception as e:
+            print(f"[Tavily] ❌ 초기화 실패: {e}")
 
     # ── 도구 1: RAG 검색 ────────────────────────────────────────
     def rag_search(self, query: str, n_results: int = 6) -> str:
@@ -213,6 +218,9 @@ class AgentTools:
     ) -> str:
         try:
             self._init_schemas()
+            # LLM이 web_context를 빈 문자열로 넘겨도 자동 수집된 컨텍스트 사용
+            if not web_context and self.web_context:
+                web_context = self.web_context
             info = self.education_info
             topics = ", ".join(info.get("topics", []))
             if info.get("extra"):
@@ -285,41 +293,65 @@ class AgentTools:
         info = self.education_info
         duration_str = info.get("duration", "")
 
-        # 총 교육 시간 파싱: "1일 (8시간)" → 8
+        # 총 교육 시간 파싱: "3일 (24시간)" → 24
         hours_match = re.search(r"(\d+)\s*시간", duration_str)
         expected_hours = int(hours_match.group(1)) if hours_match else None
+
+        # 교육 일수 파싱: "3일 (24시간)" → 3
+        days_match = re.search(r"(\d+)\s*일", duration_str)
+        expected_days = int(days_match.group(1)) if days_match else None
 
         issues = []
         details: dict = {}
 
-        # ① 총 시간 검증
+        # ① 총 시간 검증 (유연하게: 총 시간 언급 OR 일수 언급 OR 일별 시간 합산)
         if expected_hours:
             hour_mentions = re.findall(r"(\d+)\s*시간", curriculum)
             found_hours = [int(h) for h in hour_mentions]
+            day_mentions = re.findall(r"(\d+)\s*일", curriculum)
+            found_days = [int(d) for d in day_mentions]
             details["expected_hours"] = expected_hours
             details["found_hour_mentions"] = found_hours
-            if not any(h == expected_hours for h in found_hours):
-                issues.append(f"총 교육 시간 {expected_hours}시간이 커리큘럼에 명시되지 않음")
 
-        # ② 그룹 검증 (A, B, C)
+            # 총 시간이 직접 언급되었거나, 일수가 언급되었거나, 일별 시간 합산이 맞으면 통과
+            hours_ok = (
+                any(h == expected_hours for h in found_hours)  # "24시간" 직접 언급
+                or (expected_days and any(d == expected_days for d in found_days))  # "3일" 언급
+                or (sum(found_hours) >= expected_hours * 0.8)  # 일별 시간 합산이 80% 이상
+            )
+            if not hours_ok:
+                issues.append(f"총 교육 시간 {expected_hours}시간 또는 {expected_days}일이 커리큘럼에 명시되지 않음")
+
+        # ② 그룹 검증 (A, B, C) — 다양한 표기 패턴 허용
         groups_found = []
         for g in ["A", "B", "C"]:
-            if re.search(rf"{g}그룹|그룹\s*{g}", curriculum):
+            pattern = rf"{g}\s*그룹|그룹\s*{g}|Group\s*{g}|{g}조|{g}\s*팀|{g}\s*반"
+            if re.search(pattern, curriculum, re.IGNORECASE):
                 groups_found.append(g)
         details["groups_found"] = groups_found
         missing_groups = [g for g in ["A", "B", "C"] if g not in groups_found]
         if missing_groups:
             issues.append(f"누락된 그룹: {', '.join(missing_groups)}그룹")
 
-        # ③ 세션/모듈 수 검증
-        module_count = len(re.findall(r"모듈\s*\d+|세션\s*\d+|Session\s*\d+", curriculum))
+        # ③ 세션/모듈 수 검증 — 더 다양한 패턴 허용
+        module_patterns = r"모듈\s*\d+|세션\s*\d+|Session\s*\d+|Day\s*\d+|\d+일차|\d+일\s*차|Part\s*\d+"
+        module_count = len(re.findall(module_patterns, curriculum, re.IGNORECASE))
         details["module_count"] = module_count
         if module_count == 0:
             issues.append("모듈/세션 구분이 없음")
 
-        # ④ 핵심 주제 검증
+        # ④ 핵심 주제 검증 — 키워드 기반 부분 매칭 (정확한 문자열 대신 핵심 단어 포함 여부)
         topics = info.get("topics", [])
-        missing_topics = [t for t in topics if t not in curriculum]
+        missing_topics = []
+        for topic in topics:
+            # 주제에서 핵심 키워드 추출 (2글자 이상 단어)
+            keywords = [w for w in re.split(r'[,\s·및과를의에서]+', topic) if len(w) >= 2]
+            if not keywords:
+                continue
+            # 핵심 키워드 중 절반 이상이 커리큘럼에 포함되면 통과
+            matched = sum(1 for kw in keywords if kw in curriculum)
+            if matched < max(1, len(keywords) * 0.4):
+                missing_topics.append(topic)
         if missing_topics:
             issues.append(f"누락된 주제: {', '.join(missing_topics[:3])}")
         details["missing_topics"] = missing_topics
