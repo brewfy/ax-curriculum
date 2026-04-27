@@ -9,7 +9,16 @@
       "Bash(cmd.exe /c \"python --version\")",
       "Bash(cmd.exe /c \"python --version && pip install pygame\")",
       "Bash(cmd.exe /c \"python -c \\\\\"import sys; print\\(sys.version\\)\\\\\" 2>&1\")",
-      "Bash(python -m pytest tests/ -v)"
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -c ' *)",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--dev-ax-workspace\\\\604c47c4-6418-4733-a539-5e5e33d8f692\\\\tasks\\\\b7jlfpqsu.output' | Select-Object -Last 15\")",
+      "Bash(python -c \"import fastapi, uvicorn, jwt, openai, chromadb; print\\('core deps OK'\\)\")",
+      "Bash(python -c \"import fastapi, uvicorn, openai, chromadb; print\\('partial OK'\\)\")",
+      "Bash(venv/Scripts/pip install *)",
+      "Bash(venv/Scripts/python -c \"import jwt; print\\('PyJWT', jwt.__version__\\)\")",
+      "Read(//mnt/c/dev/ax-workspace/08_MultiAgent/**)",
+      "PowerShell(Start-Sleep -Seconds 5; try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/health\" -TimeoutSec 3; $r.StatusCode } catch { \"not ready: $_\" })",
+      "PowerShell(head)"
     ]
   }
 }

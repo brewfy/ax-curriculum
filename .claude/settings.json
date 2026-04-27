@@ -17,7 +17,10 @@
       "Bash(rtk init *)",
       "Bash(node \"C:/Users/user/.claude/hooks/caveman-activate.js\")",
       "Bash(rtk grep *)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python 06_3.Run.py --testset testset_sample.json)",
+      "Bash(python alpha_sweep.py)",
+      "Bash(grep -v \"UNEXPECTED\\\\|Loading weights\\\\|Warning\\\\|Notes\\\\|---\\\\|^\\\\s*$\\\\|it/s\\\\|Key\\\\|Status\")"
     ],
     "additionalDirectories": [
       "c:\\dev\\ax-workspace"
